@@ -3,7 +3,7 @@
 ## API Token
 
 GoReleaser requires an API token with the `api` scope selected to deploy the artifacts to GitLab.
-You can create one [here](https://gitlab.com/profile/personal_access_tokens).
+You can create one [here](https://gitlab.com/-/profile/personal_access_tokens).
 
 This token should be added to the environment variables as `GITLAB_TOKEN`.
 
@@ -18,8 +18,8 @@ env_files:
 
 ## GitLab Enterprise or private hosted
 
-You can use GoReleaser with GitLab Enterprise by providing its URLs in
-the `.goreleaser.yml` configuration file:
+You can use GoReleaser with GitLab Enterprise by providing its URLs in the
+`.goreleaser.yml` configuration file. This takes a normal string or a template value.
 
 ```yaml
 # .goreleaser.yml

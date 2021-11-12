@@ -1,6 +1,4 @@
----
-title: Homebrew
----
+# Homebrew Taps
 
 After releasing to GitHub or GitLab, GoReleaser can generate and publish
 a _homebrew-tap_ recipe into a repository that you have access to.
@@ -11,11 +9,6 @@ You can check the
 and the
 [formula cookbook](https://github.com/Homebrew/brew/blob/master/docs/Formula-Cookbook.md)
 for more details.
-
-!!! warning
-    If you have multiple 32-bit arm versions in each `build` section, and
-    you do not specify any `ids` in the brew section, it will default to all
-    artifacts and GoReleaser will fail.
 
 ```yaml
 # .goreleaser.yml
@@ -40,10 +33,12 @@ brews:
     # same kind. We will probably unify this in the next major version like it is done with scoop.
 
     # GitHub/GitLab repository to push the formula to
-    # Gitea is not supported yet, but the support coming
     tap:
       owner: repo-owner
       name: homebrew-tap
+      # Optionally a branch can be provided. If the branch does not exist, it
+      # will be created. If no branch is listed, the default branch will be used
+      branch: main
       # Optionally a token can be provided, if it differs from the token provided to GoReleaser
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
 
@@ -68,6 +63,9 @@ brews:
     commit_author:
       name: goreleaserbot
       email: goreleaser@carlosbecker.com
+
+    # The project name and current git tag are used in the format string.
+    commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
 
     # Folder inside the repository to put the formula.
     # Default is the root folder.
@@ -198,3 +196,7 @@ from one software to another.
 
 Our suggestion is to create a `my-app-head.rb` file on your tap following
 [homebrew's documentation](https://docs.brew.sh/Formula-Cookbook#unstable-versions-head).
+
+## Limitations
+
+- Only one `GOARM` build is allowed;

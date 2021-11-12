@@ -25,14 +25,16 @@ import (
 	"github.com/goreleaser/goreleaser/pkg/context"
 )
 
-const defaultNameTemplate = "{{ .PackageName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
+const (
+	defaultNameTemplate = "{{ .PackageName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
+	extraFiles          = "Files"
+)
 
 // Pipe for nfpm packaging.
 type Pipe struct{}
 
-func (Pipe) String() string {
-	return "linux packages"
-}
+func (Pipe) String() string                 { return "linux packages" }
+func (Pipe) Skip(ctx *context.Context) bool { return len(ctx.Config.NFPMs) == 0 }
 
 // Default sets the pipe defaults.
 func (Pipe) Default(ctx *context.Context) error {
@@ -118,35 +120,51 @@ func create(ctx *context.Context, fpm config.NFPM, format, arch string, binaries
 	if err != nil {
 		return err
 	}
-	tmpl := tmpl.New(ctx).
+	t := tmpl.New(ctx).
 		WithArtifact(binaries[0], overridden.Replacements).
 		WithExtraFields(tmpl.Fields{
 			"Release":     fpm.Release,
 			"Epoch":       fpm.Epoch,
 			"PackageName": fpm.PackageName,
 		})
-	name, err := tmpl.Apply(overridden.FileNameTemplate)
+
+	binDir, err := t.Apply(fpm.Bindir)
 	if err != nil {
 		return err
 	}
 
-	homepage, err := tmpl.Apply(fpm.Homepage)
+	homepage, err := t.Apply(fpm.Homepage)
 	if err != nil {
 		return err
 	}
 
-	description, err := tmpl.Apply(fpm.Description)
+	description, err := t.Apply(fpm.Description)
+	if err != nil {
+		return err
+	}
+
+	debKeyFile, err := t.Apply(overridden.Deb.Signature.KeyFile)
+	if err != nil {
+		return err
+	}
+
+	rpmKeyFile, err := t.Apply(overridden.RPM.Signature.KeyFile)
+	if err != nil {
+		return err
+	}
+
+	apkKeyFile, err := t.Apply(overridden.APK.Signature.KeyFile)
 	if err != nil {
 		return err
 	}
 
 	contents := files.Contents{}
 	for _, content := range overridden.Contents {
-		src, err := tmpl.Apply(content.Source)
+		src, err := t.Apply(content.Source)
 		if err != nil {
 			return err
 		}
-		dst, err := tmpl.Apply(content.Destination)
+		dst, err := t.Apply(content.Destination)
 		if err != nil {
 			return err
 		}
@@ -159,12 +177,13 @@ func create(ctx *context.Context, fpm config.NFPM, format, arch string, binaries
 		})
 	}
 
+	log := log.WithField("package", fpm.PackageName).WithField("format", format).WithField("arch", arch)
+
 	// FPM meta package should not contain binaries at all
 	if !fpm.Meta {
-		log := log.WithField("package", name+"."+format).WithField("arch", arch)
 		for _, binary := range binaries {
 			src := binary.Path
-			dst := filepath.Join(fpm.Bindir, filepath.Base(binary.Name))
+			dst := filepath.Join(binDir, binary.Name)
 			log.WithField("src", src).WithField("dst", dst).Debug("adding binary to package")
 			contents = append(contents, &files.Content{
 				Source:      filepath.ToSlash(src),
@@ -221,7 +240,7 @@ func create(ctx *context.Context, fpm config.NFPM, format, arch string, binaries
 				Breaks: overridden.Deb.Breaks,
 				Signature: nfpm.DebSignature{
 					PackageSignature: nfpm.PackageSignature{
-						KeyFile:       overridden.Deb.Signature.KeyFile,
+						KeyFile:       debKeyFile,
 						KeyPassphrase: getPassphraseFromEnv(ctx, "DEB", fpm.ID),
 					},
 					Type: overridden.Deb.Signature.Type,
@@ -233,7 +252,7 @@ func create(ctx *context.Context, fpm config.NFPM, format, arch string, binaries
 				Compression: overridden.RPM.Compression,
 				Signature: nfpm.RPMSignature{
 					PackageSignature: nfpm.PackageSignature{
-						KeyFile:       overridden.RPM.Signature.KeyFile,
+						KeyFile:       rpmKeyFile,
 						KeyPassphrase: getPassphraseFromEnv(ctx, "RPM", fpm.ID),
 					},
 				},
@@ -245,7 +264,7 @@ func create(ctx *context.Context, fpm config.NFPM, format, arch string, binaries
 			APK: nfpm.APK{
 				Signature: nfpm.APKSignature{
 					PackageSignature: nfpm.PackageSignature{
-						KeyFile:       overridden.APK.Signature.KeyFile,
+						KeyFile:       apkKeyFile,
 						KeyPassphrase: getPassphraseFromEnv(ctx, "APK", fpm.ID),
 					},
 					KeyName: overridden.APK.Signature.KeyName,
@@ -273,14 +292,25 @@ func create(ctx *context.Context, fpm config.NFPM, format, arch string, binaries
 		return err
 	}
 
-	path := filepath.Join(ctx.Config.Dist, name+"."+format)
+	info = nfpm.WithDefaults(info)
+	name, err := t.WithExtraFields(tmpl.Fields{
+		"ConventionalFileName": packager.ConventionalFileName(info),
+	}).Apply(overridden.FileNameTemplate)
+	if err != nil {
+		return err
+	}
+	if !strings.HasSuffix(name, "."+format) {
+		name = name + "." + format
+	}
+
+	path := filepath.Join(ctx.Config.Dist, name)
 	log.WithField("file", path).Info("creating")
 	w, err := os.Create(path)
 	if err != nil {
 		return err
 	}
 	defer w.Close()
-	if err := packager.Package(nfpm.WithDefaults(info), w); err != nil {
+	if err := packager.Package(info, w); err != nil {
 		return fmt.Errorf("nfpm failed: %w", err)
 	}
 	if err := w.Close(); err != nil {
@@ -288,16 +318,16 @@ func create(ctx *context.Context, fpm config.NFPM, format, arch string, binaries
 	}
 	ctx.Artifacts.Add(&artifact.Artifact{
 		Type:   artifact.LinuxPackage,
-		Name:   name + "." + format,
+		Name:   name,
 		Path:   path,
 		Goos:   binaries[0].Goos,
 		Goarch: binaries[0].Goarch,
 		Goarm:  binaries[0].Goarm,
 		Extra: map[string]interface{}{
-			"Builds": binaries,
-			"ID":     fpm.ID,
-			"Format": format,
-			"Files":  contents,
+			artifact.ExtraBuilds: binaries,
+			artifact.ExtraID:     fpm.ID,
+			artifact.ExtraFormat: format,
+			extraFiles:           contents,
 		},
 	})
 	return nil

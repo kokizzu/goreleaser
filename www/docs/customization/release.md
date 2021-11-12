@@ -1,6 +1,4 @@
----
-title: Release
----
+# Release
 
 GoReleaser can create a GitHub/GitLab/Gitea release with the current tag, upload all
 the artifacts and generate the changelog based on the new commits since the
@@ -67,7 +65,7 @@ release:
 
   # You can add extra pre-existing files to the release.
   # The filename on the release will be the last part of the path (base). If
-  # another file with the same name exists, the latest one found will be used.
+  # another file with the same name exists, the last one found will be used.
   # Defaults to empty.
   extra_files:
     - glob: ./path/to/file.txt
@@ -108,7 +106,7 @@ release:
 
   # You can add extra pre-existing files to the release.
   # The filename on the release will be the last part of the path (base). If
-  # another file with the same name exists, the latest one found will be used.
+  # another file with the same name exists, the last one found will be used.
   # Defaults to empty.
   extra_files:
     - glob: ./path/to/file.txt
@@ -153,7 +151,7 @@ release:
 
   # You can add extra pre-existing files to the release.
   # The filename on the release will be the last part of the path (base). If
-  # another file with the same name exists, the latest one found will be used.
+  # another file with the same name exists, the last one found will be used.
   # Defaults to empty.
   extra_files:
     - glob: ./path/to/file.txt
@@ -181,34 +179,6 @@ ALLOWED_TYPES = application/gzip|application/x-gzip|application/x-gtar|applicati
 
 !!! warning
     `draft` and `prerelease` are only supported by GitHub and Gitea.
-
-## Customize the changelog
-
-You can customize how the changelog is generated using the
-`changelog` section in the config file:
-
-```yaml
-# .goreleaser.yml
-changelog:
-  # Set it to true if you wish to skip the changelog generation.
-  # This may result in an empty release notes on GitHub/GitLab/Gitea.
-  skip: true
-
-  # Sorts the changelog by the commit's messages.
-  # Could either be asc, desc or empty
-  # Default is empty
-  sort: asc
-
-  filters:
-
-    # Commit messages matching the regexp listed here will be removed from
-    # the changelog
-    # Default is empty
-    exclude:
-      - '^docs:'
-      - typo
-      - (?i)foo
-```
 
 ### Define Previous Tag
 

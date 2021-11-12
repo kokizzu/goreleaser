@@ -1,6 +1,4 @@
----
-title: Archive
----
+# Archives
 
 The binaries built will be archived together with the `README` and `LICENSE` files into a
 `tar.gz` file. In the `archives` section you can customize the archive name,
@@ -69,7 +67,7 @@ archives:
       - docs/*
       - design/*.png
       - templates/**/*
-      # a more complete example, check the globbing deep dive bellow
+      # a more complete example, check the globbing deep dive below
       - src: '*.md'
         dst: docs
         # Strip parent folders when adding files to the archive.

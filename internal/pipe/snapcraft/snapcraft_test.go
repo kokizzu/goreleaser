@@ -44,6 +44,7 @@ func TestRunPipeMissingInfo(t *testing.T) {
 }
 
 func TestRunPipe(t *testing.T) {
+	testlib.CheckPath(t, "snapcraft")
 	folder := t.TempDir()
 	dist := filepath.Join(folder, "dist")
 	require.NoError(t, os.Mkdir(dist, 0o755))
@@ -87,6 +88,7 @@ func TestRunPipe(t *testing.T) {
 }
 
 func TestRunPipeInvalidNameTemplate(t *testing.T) {
+	testlib.CheckPath(t, "snapcraft")
 	folder := t.TempDir()
 	dist := filepath.Join(folder, "dist")
 	require.NoError(t, os.Mkdir(dist, 0o755))
@@ -110,6 +112,7 @@ func TestRunPipeInvalidNameTemplate(t *testing.T) {
 }
 
 func TestRunPipeWithName(t *testing.T) {
+	testlib.CheckPath(t, "snapcraft")
 	folder := t.TempDir()
 	dist := filepath.Join(folder, "dist")
 	require.NoError(t, os.Mkdir(dist, 0o755))
@@ -145,6 +148,7 @@ func TestRunPipeWithName(t *testing.T) {
 }
 
 func TestRunPipeMetadata(t *testing.T) {
+	testlib.CheckPath(t, "snapcraft")
 	folder := t.TempDir()
 	dist := filepath.Join(folder, "dist")
 	require.NoError(t, os.Mkdir(dist, 0o755))
@@ -216,6 +220,7 @@ func TestNoSnapcraftInPath(t *testing.T) {
 }
 
 func TestRunNoArguments(t *testing.T) {
+	testlib.CheckPath(t, "snapcraft")
 	folder := t.TempDir()
 	dist := filepath.Join(folder, "dist")
 	require.NoError(t, os.Mkdir(dist, 0o755))
@@ -251,6 +256,7 @@ func TestRunNoArguments(t *testing.T) {
 }
 
 func TestCompleter(t *testing.T) {
+	testlib.CheckPath(t, "snapcraft")
 	folder := t.TempDir()
 	dist := filepath.Join(folder, "dist")
 	require.NoError(t, os.Mkdir(dist, 0o755))
@@ -289,6 +295,7 @@ func TestCompleter(t *testing.T) {
 }
 
 func TestCommand(t *testing.T) {
+	testlib.CheckPath(t, "snapcraft")
 	folder := t.TempDir()
 	dist := filepath.Join(folder, "dist")
 	require.NoError(t, os.Mkdir(dist, 0o755))
@@ -325,6 +332,7 @@ func TestCommand(t *testing.T) {
 }
 
 func TestExtraFile(t *testing.T) {
+	testlib.CheckPath(t, "snapcraft")
 	folder := t.TempDir()
 	dist := filepath.Join(folder, "dist")
 	require.NoError(t, os.Mkdir(dist, 0o755))
@@ -494,7 +502,7 @@ func addBinaries(t *testing.T, ctx *context.Context, name, dist string) {
 				Goos:   goos,
 				Type:   artifact.Binary,
 				Extra: map[string]interface{}{
-					"ID": name,
+					artifact.ExtraID: name,
 				},
 			})
 		}
@@ -536,6 +544,21 @@ func Test_isValidArch(t *testing.T) {
 			require.Equal(t, tt.want, isValidArch(tt.arch))
 		})
 	}
+}
+
+func TestSkip(t *testing.T) {
+	t.Run("skip", func(t *testing.T) {
+		require.True(t, Pipe{}.Skip(context.New(config.Project{})))
+	})
+
+	t.Run("dont skip", func(t *testing.T) {
+		ctx := context.New(config.Project{
+			Snapcrafts: []config.Snapcraft{
+				{},
+			},
+		})
+		require.False(t, Pipe{}.Skip(ctx))
+	})
 }
 
 func requireEqualFiles(tb testing.TB, a, b string) {

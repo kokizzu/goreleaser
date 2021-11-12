@@ -1,9 +1,6 @@
----
-title: Artifactory
----
+# Artifactory
 
-Since [v0.38.0](https://github.com/goreleaser/goreleaser/releases/tag/v0.38.0),
-GoReleaser supports building and pushing artifacts into Artifactory.
+Publish your artifacts to an Artifactory instance.
 
 ## How it works
 

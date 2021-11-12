@@ -7,8 +7,6 @@ import (
 	"testing"
 
 	"github.com/goreleaser/goreleaser/internal/artifact"
-	"github.com/goreleaser/goreleaser/internal/pipe"
-	"github.com/goreleaser/goreleaser/internal/testlib"
 	"github.com/goreleaser/goreleaser/pkg/config"
 	"github.com/goreleaser/goreleaser/pkg/context"
 	"github.com/stretchr/testify/require"
@@ -69,7 +67,7 @@ func TestPipe(t *testing.T) {
 				Path: file,
 				Type: artifact.UploadableBinary,
 				Extra: map[string]interface{}{
-					"ID": "id-1",
+					artifact.ExtraID: "id-1",
 				},
 			})
 			ctx.Artifacts.Add(&artifact.Artifact{
@@ -77,7 +75,7 @@ func TestPipe(t *testing.T) {
 				Path: file,
 				Type: artifact.UploadableArchive,
 				Extra: map[string]interface{}{
-					"ID": "id-2",
+					artifact.ExtraID: "id-2",
 				},
 			})
 			ctx.Artifacts.Add(&artifact.Artifact{
@@ -85,7 +83,7 @@ func TestPipe(t *testing.T) {
 				Path: file,
 				Type: artifact.LinuxPackage,
 				Extra: map[string]interface{}{
-					"ID": "id-3",
+					artifact.ExtraID: "id-3",
 				},
 			})
 			require.NoError(t, Pipe{}.Run(ctx))
@@ -101,21 +99,6 @@ func TestPipe(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestPipeSkipTrue(t *testing.T) {
-	folder := t.TempDir()
-	ctx := context.New(
-		config.Project{
-			Dist: folder,
-			Checksum: config.Checksum{
-				Disable: true,
-			},
-		},
-	)
-	err := Pipe{}.Run(ctx)
-	testlib.AssertSkipped(t, err)
-	require.EqualError(t, err, pipe.ErrSkipDisabledPipe.Error())
 }
 
 func TestPipeFileNotExist(t *testing.T) {
@@ -236,6 +219,125 @@ func TestDefaultSet(t *testing.T) {
 	}
 	require.NoError(t, Pipe{}.Default(ctx))
 	require.Equal(t, "checksums.txt", ctx.Config.Checksum.NameTemplate)
+}
+
+func TestPipeCheckSumsWithExtraFiles(t *testing.T) {
+	const binary = "binary"
+	const checksums = "checksums.txt"
+	const extraFileFooRelPath = "./testdata/foo.txt"
+	const extraFileBarRelPath = "./testdata/**/bar.txt"
+	const extraFileFoo = "foo.txt"
+	const extraFileBar = "bar.txt"
+
+	tests := map[string]struct {
+		extraFiles []config.ExtraFile
+		want       []string
+	}{
+		"default": {
+			extraFiles: nil,
+			want: []string{
+				binary,
+			},
+		},
+		"one extra file": {
+			extraFiles: []config.ExtraFile{
+				{Glob: extraFileFooRelPath},
+			},
+			want: []string{
+				extraFileFoo,
+			},
+		},
+		"multiple extra files": {
+			extraFiles: []config.ExtraFile{
+				{Glob: extraFileFooRelPath},
+				{Glob: extraFileBarRelPath},
+			},
+			want: []string{
+				extraFileFoo,
+				extraFileBar,
+			},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			folder := t.TempDir()
+			file := filepath.Join(folder, binary)
+			require.NoError(t, os.WriteFile(file, []byte("some string"), 0o644))
+			ctx := context.New(
+				config.Project{
+					Dist:        folder,
+					ProjectName: binary,
+					Checksum: config.Checksum{
+						Algorithm:    "sha256",
+						NameTemplate: "checksums.txt",
+						ExtraFiles:   tt.extraFiles,
+					},
+				},
+			)
+
+			ctx.Artifacts.Add(&artifact.Artifact{
+				Name: binary,
+				Path: file,
+				Type: artifact.UploadableBinary,
+				Extra: map[string]interface{}{
+					artifact.ExtraID: "id-1",
+				},
+			})
+
+			require.NoError(t, Pipe{}.Run(ctx))
+
+			bts, err := os.ReadFile(filepath.Join(folder, checksums))
+
+			require.NoError(t, err)
+			for _, want := range tt.want {
+				if tt.extraFiles == nil {
+					require.Contains(t, string(bts), "61d034473102d7dac305902770471fd50f4c5b26f6831a56dd90b5184b3c30fc  "+want)
+				} else {
+					require.Contains(t, string(bts), "3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  "+want)
+				}
+			}
+		})
+	}
+}
+
+func TestExtraFilesNoMatch(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.New(
+		config.Project{
+			Dist:        dir,
+			ProjectName: "fake",
+			Checksum: config.Checksum{
+				Algorithm:    "sha256",
+				NameTemplate: "checksums.txt",
+				ExtraFiles:   []config.ExtraFile{{Glob: "./nope/nope.txt"}},
+			},
+		},
+	)
+
+	ctx.Artifacts.Add(&artifact.Artifact{
+		Name: "fake",
+		Path: "fake-path",
+		Type: artifact.UploadableBinary,
+	})
+
+	require.NoError(t, Pipe{}.Default(ctx))
+	require.EqualError(t, Pipe{}.Run(ctx), `globbing failed for pattern ./nope/nope.txt: matching "./nope/nope.txt": file does not exist`)
+}
+
+func TestSkip(t *testing.T) {
+	t.Run("skip", func(t *testing.T) {
+		ctx := context.New(config.Project{
+			Checksum: config.Checksum{
+				Disable: true,
+			},
+		})
+		require.True(t, Pipe{}.Skip(ctx))
+	})
+
+	t.Run("dont skip", func(t *testing.T) {
+		require.False(t, Pipe{}.Skip(context.New(config.Project{})))
+	})
 }
 
 // TODO: add tests for LinuxPackage and UploadableSourceArchive

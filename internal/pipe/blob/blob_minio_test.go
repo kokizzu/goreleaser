@@ -1,11 +1,9 @@
 package blob
 
-// this is pretty much copied from the s3 pipe to ensure both work the same way
-// only differences are that it sets `blobs` instead of `s3` on test cases and
-// the test setup and teardown
-
 import (
+	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -21,27 +19,68 @@ import (
 	"gocloud.dev/blob"
 )
 
+const (
+	minioUser     = "minio"
+	minioPwd      = "miniostorage"
+	containerName = "goreleaserTestMinio"
+)
+
+var listen string
+
+func TestMain(m *testing.M) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	listener.Close()
+	listen = listener.Addr().String()
+
+	cleanup, err := start(listen)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	prepareEnv()
+
+	code := m.Run()
+	if err := cleanup(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	os.Exit(code)
+}
+
 func TestMinioUpload(t *testing.T) {
-	listen := randomListen(t)
+	name := "basic"
 	folder := t.TempDir()
 	srcpath := filepath.Join(folder, "source.tar.gz")
 	tgzpath := filepath.Join(folder, "bin.tar.gz")
 	debpath := filepath.Join(folder, "bin.deb")
 	checkpath := filepath.Join(folder, "check.txt")
+	sigpath := filepath.Join(folder, "f.sig")
+	certpath := filepath.Join(folder, "f.pem")
 	require.NoError(t, os.WriteFile(checkpath, []byte("fake checksums"), 0o744))
 	require.NoError(t, os.WriteFile(srcpath, []byte("fake\nsrc"), 0o744))
 	require.NoError(t, os.WriteFile(tgzpath, []byte("fake\ntargz"), 0o744))
 	require.NoError(t, os.WriteFile(debpath, []byte("fake\ndeb"), 0o744))
+	require.NoError(t, os.WriteFile(sigpath, []byte("fake\nsig"), 0o744))
+	require.NoError(t, os.WriteFile(certpath, []byte("fake\ncert"), 0o744))
 	ctx := context.New(config.Project{
 		Dist:        folder,
 		ProjectName: "testupload",
 		Blobs: []config.Blob{
 			{
 				Provider: "s3",
-				Bucket:   "test",
+				Bucket:   name,
 				Region:   "us-east",
 				Endpoint: "http://" + listen,
 				IDs:      []string{"foo", "bar"},
+				ExtraFiles: []config.ExtraFile{
+					{
+						Glob: "./testdata/*.golden",
+					},
+				},
 			},
 		},
 	})
@@ -52,11 +91,27 @@ func TestMinioUpload(t *testing.T) {
 		Path: checkpath,
 	})
 	ctx.Artifacts.Add(&artifact.Artifact{
+		Type: artifact.Signature,
+		Name: "checksum.txt.sig",
+		Path: sigpath,
+		Extra: map[string]interface{}{
+			artifact.ExtraID: "foo",
+		},
+	})
+	ctx.Artifacts.Add(&artifact.Artifact{
+		Type: artifact.Certificate,
+		Name: "checksum.pem",
+		Path: certpath,
+		Extra: map[string]interface{}{
+			artifact.ExtraID: "foo",
+		},
+	})
+	ctx.Artifacts.Add(&artifact.Artifact{
 		Type: artifact.UploadableSourceArchive,
 		Name: "source.tar.gz",
 		Path: srcpath,
 		Extra: map[string]interface{}{
-			"Format": "tar.gz",
+			artifact.ExtraFormat: "tar.gz",
 		},
 	})
 	ctx.Artifacts.Add(&artifact.Artifact{
@@ -64,7 +119,7 @@ func TestMinioUpload(t *testing.T) {
 		Name: "bin.tar.gz",
 		Path: tgzpath,
 		Extra: map[string]interface{}{
-			"ID": "foo",
+			artifact.ExtraID: "foo",
 		},
 	})
 	ctx.Artifacts.Add(&artifact.Artifact{
@@ -72,12 +127,11 @@ func TestMinioUpload(t *testing.T) {
 		Name: "bin.deb",
 		Path: debpath,
 		Extra: map[string]interface{}{
-			"ID": "bar",
+			artifact.ExtraID: "bar",
 		},
 	})
-	name := "test_upload"
-	start(t, name, listen)
-	prepareEnv()
+
+	setupBucket(t, name)
 	require.NoError(t, Pipe{}.Default(ctx))
 	require.NoError(t, Pipe{}.Publish(ctx))
 
@@ -85,19 +139,22 @@ func TestMinioUpload(t *testing.T) {
 		"testupload/v1.0.0/bin.deb",
 		"testupload/v1.0.0/bin.tar.gz",
 		"testupload/v1.0.0/checksum.txt",
+		"testupload/v1.0.0/checksum.txt.sig",
+		"testupload/v1.0.0/checksum.pem",
 		"testupload/v1.0.0/source.tar.gz",
+		"testupload/v1.0.0/file.golden",
 	})
 }
 
 func TestMinioUploadCustomBucketID(t *testing.T) {
-	listen := randomListen(t)
+	name := "fromenv"
 	folder := t.TempDir()
 	tgzpath := filepath.Join(folder, "bin.tar.gz")
 	debpath := filepath.Join(folder, "bin.deb")
 	require.NoError(t, os.WriteFile(tgzpath, []byte("fake\ntargz"), 0o744))
 	require.NoError(t, os.WriteFile(debpath, []byte("fake\ndeb"), 0o744))
 	// Set custom BUCKET_ID env variable.
-	require.NoError(t, os.Setenv("BUCKET_ID", "test"))
+	require.NoError(t, os.Setenv("BUCKET_ID", name))
 	ctx := context.New(config.Project{
 		Dist:        folder,
 		ProjectName: "testupload",
@@ -120,15 +177,14 @@ func TestMinioUploadCustomBucketID(t *testing.T) {
 		Name: "bin.deb",
 		Path: debpath,
 	})
-	name := "custom_bucket_id"
-	start(t, name, listen)
-	prepareEnv()
+
+	setupBucket(t, name)
 	require.NoError(t, Pipe{}.Default(ctx))
 	require.NoError(t, Pipe{}.Publish(ctx))
 }
 
 func TestMinioUploadRootFolder(t *testing.T) {
-	listen := randomListen(t)
+	name := "rootdir"
 	folder := t.TempDir()
 	tgzpath := filepath.Join(folder, "bin.tar.gz")
 	debpath := filepath.Join(folder, "bin.deb")
@@ -140,7 +196,7 @@ func TestMinioUploadRootFolder(t *testing.T) {
 		Blobs: []config.Blob{
 			{
 				Provider: "s3",
-				Bucket:   "test",
+				Bucket:   name,
 				Folder:   "/",
 				Endpoint: "http://" + listen,
 			},
@@ -157,15 +213,13 @@ func TestMinioUploadRootFolder(t *testing.T) {
 		Name: "bin.deb",
 		Path: debpath,
 	})
-	name := "root_folder"
-	start(t, name, listen)
-	prepareEnv()
+
+	setupBucket(t, name)
 	require.NoError(t, Pipe{}.Default(ctx))
 	require.NoError(t, Pipe{}.Publish(ctx))
 }
 
 func TestMinioUploadInvalidCustomBucketID(t *testing.T) {
-	listen := randomListen(t)
 	folder := t.TempDir()
 	tgzpath := filepath.Join(folder, "bin.tar.gz")
 	debpath := filepath.Join(folder, "bin.deb")
@@ -193,140 +247,86 @@ func TestMinioUploadInvalidCustomBucketID(t *testing.T) {
 		Name: "bin.deb",
 		Path: debpath,
 	})
-	name := "invalid_bucket_id"
-	start(t, name, listen)
-	prepareEnv()
+
 	require.NoError(t, Pipe{}.Default(ctx))
 	require.Error(t, Pipe{}.Publish(ctx))
 }
 
-func TestMinioUploadSkipPublish(t *testing.T) {
-	listen := randomListen(t)
-	folder := t.TempDir()
-	srcpath := filepath.Join(folder, "source.tar.gz")
-	tgzpath := filepath.Join(folder, "bin.tar.gz")
-	debpath := filepath.Join(folder, "bin.deb")
-	checkpath := filepath.Join(folder, "check.txt")
-	require.NoError(t, os.WriteFile(checkpath, []byte("fake checksums"), 0o744))
-	require.NoError(t, os.WriteFile(srcpath, []byte("fake\nsrc"), 0o744))
-	require.NoError(t, os.WriteFile(tgzpath, []byte("fake\ntargz"), 0o744))
-	require.NoError(t, os.WriteFile(debpath, []byte("fake\ndeb"), 0o744))
-	ctx := context.New(config.Project{
-		Dist:        folder,
-		ProjectName: "testupload",
-		Blobs: []config.Blob{
-			{
-				Provider: "s3",
-				Bucket:   "test",
-				Region:   "us-east",
-				Endpoint: "http://" + listen,
-				IDs:      []string{"foo", "bar"},
-			},
-		},
-	})
-	ctx.SkipPublish = true
-	ctx.Git = context.GitInfo{CurrentTag: "v1.2.0"}
-	ctx.Artifacts.Add(&artifact.Artifact{
-		Type: artifact.Checksum,
-		Name: "checksum.txt",
-		Path: checkpath,
-	})
-	ctx.Artifacts.Add(&artifact.Artifact{
-		Type: artifact.UploadableSourceArchive,
-		Name: "source.tar.gz",
-		Path: srcpath,
-		Extra: map[string]interface{}{
-			"Format": "tar.gz",
-		},
-	})
-	ctx.Artifacts.Add(&artifact.Artifact{
-		Type: artifact.UploadableArchive,
-		Name: "bin.tar.gz",
-		Path: tgzpath,
-		Extra: map[string]interface{}{
-			"ID": "foo",
-		},
-	})
-	ctx.Artifacts.Add(&artifact.Artifact{
-		Type: artifact.LinuxPackage,
-		Name: "bin.deb",
-		Path: debpath,
-		Extra: map[string]interface{}{
-			"ID": "bar",
-		},
-	})
-	name := "test_upload"
-	start(t, name, listen)
-	prepareEnv()
-	require.NoError(t, Pipe{}.Default(ctx))
-	require.NoError(t, Pipe{}.Publish(ctx))
-
-	require.NotContains(t, getFiles(t, ctx, ctx.Config.Blobs[0]), []string{
-		"testupload/v1.2.0/bin.deb",
-		"testupload/v1.2.0/bin.tar.gz",
-		"testupload/v1.2.0/checksum.txt",
-		"testupload/v1.2.0/source.tar.gz",
-	})
-}
-
-func randomListen(t *testing.T) string {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	listener.Close()
-	return listener.Addr().String()
-}
-
 func prepareEnv() {
-	os.Setenv("AWS_ACCESS_KEY_ID", "minio")
-	os.Setenv("AWS_SECRET_ACCESS_KEY", "miniostorage")
+	os.Setenv("AWS_ACCESS_KEY_ID", minioUser)
+	os.Setenv("AWS_SECRET_ACCESS_KEY", minioPwd)
 	os.Setenv("AWS_REGION", "us-east-1")
 }
 
-func start(tb testing.TB, name, listen string) {
-	tb.Helper()
-	wd, err := os.Getwd()
-	require.NoError(tb, err)
+func start(listen string) (func() error, error) {
+	data := filepath.Join(os.TempDir(), containerName)
 
-	removeTestData()
-
-	tb.Cleanup(func() {
-		if out, err := exec.Command("docker", "stop", name).CombinedOutput(); err != nil {
-			tb.Fatalf("failed to stop minio: %s", string(out))
+	fn := func() error {
+		if out, err := exec.Command("docker", "stop", containerName).CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to stop minio: %s: %w", out, err)
 		}
-		removeTestData()
-	})
+		if err := os.RemoveAll(data); err != nil {
+			log.Println("failed to remove", data)
+		}
+		return nil
+	}
+
+	// stop container if it is running (likely from previous test)
+	_, _ = exec.Command("docker", "stop", containerName).CombinedOutput()
 
 	if out, err := exec.Command(
 		"docker", "run", "-d", "--rm",
-		"-v", filepath.Join(wd, "testdata/data")+":/data",
-		"--name", name,
+		"-v", data+":/data",
+		"--name", containerName,
 		"-p", listen+":9000",
-		"-e", "MINIO_ACCESS_KEY=minio",
-		"-e", "MINIO_SECRET_KEY=miniostorage",
+		"-e", "MINIO_ROOT_USER="+minioUser,
+		"-e", "MINIO_ROOT_PASSWORD="+minioPwd,
 		"--health-interval", "1s",
 		"--health-cmd=curl --silent --fail http://localhost:9000/minio/health/ready || exit 1",
 		"minio/minio",
-		"server", "/data",
+		"server", "/data", "--console-address", ":9001",
 	).CombinedOutput(); err != nil {
-		tb.Fatalf("failed to start minio: %s", string(out))
+		return fn, fmt.Errorf("failed to start minio: %s: %w", out, err)
 	}
 
 	for range time.Tick(time.Second) {
-		out, err := exec.Command("docker", "inspect", "--format='{{json .State.Health}}'", name).CombinedOutput()
+		out, err := exec.Command("docker", "inspect", "--format='{{json .State.Health}}'", containerName).CombinedOutput()
 		if err != nil {
-			tb.Fatalf("failed to check minio status: %s", string(out))
+			return fn, fmt.Errorf("failed to check minio status: %s: %w", string(out), err)
 		}
 		if strings.Contains(string(out), `"Status":"healthy"`) {
-			tb.Log("minio is healthy")
+			log.Println("minio is healthy")
 			break
 		}
-		tb.Log("waiting for minio to be healthy")
+		log.Println("waiting for minio to be healthy")
 	}
+
+	return fn, nil
 }
 
-func removeTestData() {
-	_ = os.RemoveAll("./testdata/data/test/testupload") // dont care if it fails
+func setupBucket(tb testing.TB, name string) {
+	tb.Helper()
+	mc(tb, "mc mb local/"+name)
+	tb.Cleanup(func() {
+		mc(tb, "mc rb --force local/"+name)
+	})
+}
+
+func mc(tb testing.TB, cmd string) {
+	tb.Helper()
+
+	if out, err := exec.Command(
+		"docker", "run", "--rm",
+		"--link", containerName,
+		"--entrypoint", "sh",
+		"minio/mc",
+		"-c", fmt.Sprintf(
+			"mc config host add local http://%s:9000 %s %s; %s",
+			containerName, minioUser, minioPwd, cmd,
+		),
+	).CombinedOutput(); err != nil {
+		tb.Fatalf("failed to create test bucket: %s", string(out))
+	}
 }
 
 func getFiles(t *testing.T, ctx *context.Context, cfg config.Blob) []string {

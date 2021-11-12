@@ -1,6 +1,4 @@
----
-title: Checksum
----
+# Checksums
 
 GoReleaser generates a `project_1.0.0_checksums.txt` file and uploads it with the
 release, so your users can validate if the downloaded files are correct.
@@ -23,13 +21,22 @@ checksum:
   # If left empty, all published binaries, archives, linux packages and source archives
   # are included in the checksums file.
   # Default is an empty list.
-  ids: 
+  ids:
     - foo
     - bar
 
   # Disable the generation/upload of the checksum file.
   # Default is false.
   disable: true
+
+  # You can add extra pre-existing files to the checksums file.
+  # The filename on the checksums file will be the last part of the path (base). If
+  # another file with the same name exists, the last one found will be used.
+  # Defaults to empty.
+  extra_files:
+    - glob: ./path/to/file.txt
+    - glob: ./glob/**/to/**/file/**/*
+    - glob: ./glob/foo/to/bar/file/foobar/override_from_previous
 ```
 
 !!! tip

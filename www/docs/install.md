@@ -4,7 +4,7 @@ There are two GoReleaser distributions: OSS and [Pro](/pro/).
 
 You can install the pre-compiled binary (in several different ways), use Docker or compile from source (when on OSS).
 
-Bellow you can find the steps for each of them.
+Below you can find the steps for each of them.
 
 ## Install the pre-compiled binary
 
@@ -30,6 +30,20 @@ Bellow you can find the steps for each of them.
 !!! info
     The [formula in homebrew-core](https://github.com/Homebrew/homebrew-core/blob/master/Formula/goreleaser.rb) might be slightly outdated.
     Use our homebrew tap to always get the latest updates.
+
+### gofish
+
+=== "OSS"
+    ```sh
+    gofish rig add https://github.com/goreleaser/fish-food
+    gofish install github.com/goreleaser/fish-food/goreleaser
+    ```
+
+=== "Pro"
+    ```sh
+    gofish rig add https://github.com/goreleaser/fish-food
+    gofish install github.com/goreleaser/fish-food/goreleaser-pro
+    ```
 
 ### snapcraft
 
@@ -99,17 +113,6 @@ Bellow you can find the steps for each of them.
 === "Pro"
     Download the `.deb`, `.rpm` or `.apk` packages from the [Pro releases page][pro-releases] and install them with the appropriate tools.
 
-
-### shell script
-
-=== "OSS"
-    ```sh
-    curl -sfL https://install.goreleaser.com/github.com/goreleaser/goreleaser.sh | sh
-    ```
-
-
-<!-- TODO: write a new shell script and store it within the website -->
-
 ### go install
 
 === "OSS"
@@ -132,39 +135,31 @@ All artifacts are checksummed and the checksum file is signed with [cosign][].
 You can verify it using [our public key](https://goreleaser.com/static/goreleaser.pub).
 
 === "OSS"
-    1. Download the files you want, the `goreleaser_checksums.txt` and `goreleaser_checksums.txt.sig` files from the [releases][releases] page.
-    1. Get our public key:
-      ```sh
-      wget https://goreleaser.com/static/goreleaser.pub
-      ```
+    1. Download the files you want, the `checksums.txt` and `checksums.txt.sig` files from the [releases][releases] page.
     1. Verify the signature:
       ```sh
       cosign verify-blob \
-        -key goreleaser.pub \
-        -signature goreleaser_checksums.txt.sig \
-        goreleaser_checksums.txt
+        -key https://goreleaser.com/static/goreleaser.pub \
+        -signature checksums.txt.sig \
+        checksums.txt
       ```
     1. If the signature is valid, you can then verify the SHA256 sums match with the downloaded binary:
       ```sh
-      sha256sum --ignore-missing -c goreleaser_checksums.txt
+      sha256sum --ignore-missing -c checksums.txt
       ```
 
 === "Pro"
-    1. Download the files you want, the `goreleaser-pro_checksums.txt` and `goreleaser-pro_checksums.txt.sig` files from the [releases][pro-releases] page.
-    1. Get our public key:
-      ```sh
-      wget https://goreleaser.com/static/goreleaser.pub
-      ```
+    1. Download the files you want, the `checksums.txt` and `checksums.txt.sig` files from the [releases][pro-releases] page.
     1. Verify the signature:
       ```sh
       cosign verify-blob \
-        -key goreleaser.pub \
-        -signature goreleaser-pro_checksums.txt.sig \
-        goreleaser-pro_checksums.txt
+        -key https://goreleaser.com/static/goreleaser.pub \
+        -signature checksums.txt.sig \
+        checksums.txt
       ```
-    1. If the signature is ok, you can then verify the SHA256 sums match with the downloaded binary:
+    1. If the signature is valid, you can then verify the SHA256 sums match with the downloaded binary:
       ```sh
-      sha256sum --ignore-missing -c goreleaser-pro_checksums.txt
+      sha256sum --ignore-missing -c checksums.txt
       ```
 
 ## Verifying docker images
@@ -174,29 +169,37 @@ Our Docker image is signed with [cosign][].
 You can verify it using [our public key](https://goreleaser.com/static/goreleaser.pub).
 
 === "OSS"
+    Verify the signatures:
     ```sh
-    wget https://goreleaser.com/static/goreleaser.pub
-    cosign verify -key goreleaser.pub goreleaser/goreleaser
-    cosign verify -key goreleaser.pub ghcr.io/goreleaser/goreleaser
+    cosign verify \
+      -key https://goreleaser.com/static/goreleaser.pub \
+      goreleaser/goreleaser
+    cosign verify \
+      -key https://goreleaser.com/static/goreleaser.pub \
+      ghcr.io/goreleaser/goreleaser
     ```
 
 === "Pro"
+    Verify the signatures:
     ```sh
-    wget https://goreleaser.com/static/goreleaser.pub
-    cosign verify -key goreleaser.pub goreleaser/goreleaser-pro
-    cosign verify -key goreleaser.pub ghcr.io/goreleaser/goreleaser-pro
+    cosign verify \
+      -key https://goreleaser.com/static/goreleaser.pub \
+      goreleaser/goreleaser-pro
+    cosign verify \
+      -key https://goreleaser.com/static/goreleaser.pub \
+      ghcr.io/goreleaser/goreleaser-pro
     ```
 
 ## Running with Docker
 
 You can also use it within a Docker container.
-To do that, you'll need to execute something more-or-less like the examples bellow.
+To do that, you'll need to execute something more-or-less like the examples below.
 
 === "OSS"
     Registries:
 
     - [`goreleaser/goreleaser`](https://hub.docker.com/r/goreleaser/goreleaser)
-    - [`ghcr.io/goreleaser/goreleaser`](https://github.com/orgs/goreleaser/packages/container/package/goreleaser)
+    - [`ghcr.io/goreleaser/goreleaser`](https://github.com/goreleaser/goreleaser/pkgs/container/goreleaser)
 
     Example usage:
 
@@ -216,7 +219,7 @@ To do that, you'll need to execute something more-or-less like the examples bell
     Registries:
 
     - [`goreleaser/goreleaser-pro`](https://hub.docker.com/r/goreleaser/goreleaser-pro)
-    - [`ghcr.io/goreleaser/goreleaser-pro`](https://github.com/orgs/goreleaser/packages/container/package/goreleaser-pro)
+    - [`ghcr.io/goreleaser/goreleaser-pro`](https://github.com/goreleaser/goreleaser/pkgs/container/goreleaser-pro)
 
     Example usage:
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/goreleaser/goreleaser/internal/client"
 	"github.com/goreleaser/goreleaser/internal/testlib"
 	"github.com/goreleaser/goreleaser/pkg/config"
 	"github.com/goreleaser/goreleaser/pkg/context"
@@ -32,27 +33,10 @@ func TestTemplatedChangelogProvidedViaFlag(t *testing.T) {
 	require.Equal(t, "c0ff33 coffeee v0.0.1\n", ctx.ReleaseNotes)
 }
 
-func TestChangelogProvidedViaFlagAndSkipEnabled(t *testing.T) {
-	ctx := context.New(config.Project{
-		Changelog: config.Changelog{
-			Skip: true,
-		},
-	})
-	ctx.ReleaseNotesFile = "testdata/changes.md"
-	testlib.AssertSkipped(t, Pipe{}.Run(ctx))
-	require.Equal(t, "c0ff33 coffeee\n", ctx.ReleaseNotes)
-}
-
 func TestChangelogProvidedViaFlagDoesntExist(t *testing.T) {
 	ctx := context.New(config.Project{})
 	ctx.ReleaseNotesFile = "testdata/changes.nope"
 	require.EqualError(t, Pipe{}.Run(ctx), "open testdata/changes.nope: no such file or directory")
-}
-
-func TestChangelogSkip(t *testing.T) {
-	ctx := context.New(config.Project{})
-	ctx.Config.Changelog.Skip = true
-	testlib.AssertSkipped(t, Pipe{}.Run(ctx))
 }
 
 func TestReleaseHeaderProvidedViaFlagDoesntExist(t *testing.T) {
@@ -65,12 +49,6 @@ func TestReleaseFooterProvidedViaFlagDoesntExist(t *testing.T) {
 	ctx := context.New(config.Project{})
 	ctx.ReleaseFooterFile = "testdata/footer.nope"
 	require.EqualError(t, Pipe{}.Run(ctx), "open testdata/footer.nope: no such file or directory")
-}
-
-func TestSnapshot(t *testing.T) {
-	ctx := context.New(config.Project{})
-	ctx.Snapshot = true
-	testlib.AssertSkipped(t, Pipe{}.Run(ctx))
 }
 
 func TestChangelog(t *testing.T) {
@@ -126,8 +104,11 @@ func TestChangelogPreviousTagEnv(t *testing.T) {
 	testlib.GitCommit(t, "third")
 	testlib.GitTag(t, "v0.0.3")
 	ctx := context.New(config.Project{
-		Dist:      folder,
-		Changelog: config.Changelog{Filters: config.Filters{}},
+		Dist: folder,
+		Changelog: config.Changelog{
+			Use:     "git",
+			Filters: config.Filters{},
+		},
 	})
 	ctx.Git.CurrentTag = "v0.0.3"
 	require.NoError(t, os.Setenv("GORELEASER_PREVIOUS_TAG", "v0.0.1"))
@@ -447,4 +428,134 @@ func TestChangeLogWithoutReleaseFooter(t *testing.T) {
 	require.NoError(t, Pipe{}.Run(ctx))
 	require.Contains(t, ctx.ReleaseNotes, "## Changelog")
 	require.Equal(t, rune(ctx.ReleaseNotes[len(ctx.ReleaseNotes)-1]), '\n')
+}
+
+func TestGetChangelogGitHub(t *testing.T) {
+	ctx := context.New(config.Project{
+		Changelog: config.Changelog{
+			Use: "github",
+		},
+	})
+
+	expected := "c90f1085f255d0af0b055160bfff5ee40f47af79: fix: do not skip any defaults (#2521) (@caarlos0)"
+	mock := client.NewMock()
+	mock.Changes = expected
+	l := scmChangeloger{
+		client: mock,
+		repo: client.Repo{
+			Owner: "goreleaser",
+			Name:  "goreleaser",
+		},
+	}
+	log, err := l.Log(ctx, "v0.180.1", "v0.180.2")
+	require.NoError(t, err)
+	require.Equal(t, expected, log)
+}
+
+func TestGetChangelogGitHubNative(t *testing.T) {
+	ctx := context.New(config.Project{
+		Changelog: config.Changelog{
+			Use: "github-native",
+		},
+	})
+
+	expected := "**Full Changelog**: https://github.com/gorelease/goreleaser/compare/v0.180.1...v0.180.2"
+	mock := client.NewMock()
+	mock.ReleaseNotes = expected
+	l := githubNativeChangeloger{
+		client: mock,
+		repo: client.Repo{
+			Owner: "goreleaser",
+			Name:  "goreleaser",
+		},
+	}
+	log, err := l.Log(ctx, "v0.180.1", "v0.180.2")
+	require.NoError(t, err)
+	require.Equal(t, expected, log)
+}
+
+func TestGetChangeloger(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		c, err := getChangeloger(context.New(config.Project{}))
+		require.NoError(t, err)
+		require.IsType(t, c, gitChangeloger{})
+	})
+
+	t.Run("git", func(t *testing.T) {
+		c, err := getChangeloger(context.New(config.Project{
+			Changelog: config.Changelog{
+				Use: "git",
+			},
+		}))
+		require.NoError(t, err)
+		require.IsType(t, c, gitChangeloger{})
+	})
+
+	t.Run("github", func(t *testing.T) {
+		ctx := context.New(config.Project{
+			Changelog: config.Changelog{
+				Use: "github",
+			},
+		})
+		ctx.TokenType = context.TokenTypeGitHub
+		c, err := getChangeloger(ctx)
+		require.NoError(t, err)
+		require.IsType(t, c, &scmChangeloger{})
+	})
+
+	t.Run("github-native", func(t *testing.T) {
+		ctx := context.New(config.Project{
+			Changelog: config.Changelog{
+				Use: "github-native",
+			},
+		})
+		ctx.TokenType = context.TokenTypeGitHub
+		c, err := getChangeloger(ctx)
+		require.NoError(t, err)
+		require.IsType(t, c, &githubNativeChangeloger{})
+	})
+
+	t.Run("gitlab", func(t *testing.T) {
+		ctx := context.New(config.Project{
+			Changelog: config.Changelog{
+				Use: "gitlab",
+			},
+		})
+		ctx.TokenType = context.TokenTypeGitLab
+		c, err := getChangeloger(ctx)
+		require.NoError(t, err)
+		require.IsType(t, c, &scmChangeloger{})
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		c, err := getChangeloger(context.New(config.Project{
+			Changelog: config.Changelog{
+				Use: "nope",
+			},
+		}))
+		require.EqualError(t, err, `invalid changelog.use: "nope"`)
+		require.Nil(t, c)
+	})
+}
+
+func TestSkip(t *testing.T) {
+	t.Run("skip on snapshot", func(t *testing.T) {
+		ctx := context.New(config.Project{})
+		ctx.Snapshot = true
+		require.True(t, Pipe{}.Skip(ctx))
+	})
+
+	t.Run("skip", func(t *testing.T) {
+		ctx := context.New(config.Project{
+			Changelog: config.Changelog{
+				Skip: true,
+			},
+		})
+		require.True(t, Pipe{}.Skip(ctx))
+	})
+
+	t.Run("dont skip", func(t *testing.T) {
+		ctx := context.New(config.Project{})
+		require.False(t, Pipe{}.Skip(ctx))
+	})
 }

@@ -28,8 +28,9 @@ func TestArchive(t *testing.T) {
 				ProjectName: "foo",
 				Dist:        "dist",
 				Source: config.Source{
-					Format:  format,
-					Enabled: true,
+					Format:         format,
+					Enabled:        true,
+					PrefixTemplate: "{{ .ProjectName }}-{{ .Version }}/",
 				},
 			})
 			ctx.Git.FullCommit = "HEAD"
@@ -45,7 +46,7 @@ func TestArchive(t *testing.T) {
 				Name: "foo-1.0.0." + format,
 				Path: "dist/foo-1.0.0." + format,
 				Extra: map[string]interface{}{
-					"Format": format,
+					artifact.ExtraFormat: format,
 				},
 			}, *artifacts[0])
 			stat, err := os.Stat(filepath.Join(tmp, "dist", "foo-1.0.0."+format))
@@ -75,9 +76,20 @@ func TestInvalidNameTemplate(t *testing.T) {
 }
 
 func TestDisabled(t *testing.T) {
-	testlib.AssertSkipped(t, Pipe{}.Run(context.New(config.Project{})))
+	require.True(t, Pipe{}.Skip(context.New(config.Project{})))
 }
 
-func TestString(t *testing.T) {
-	require.NotEmpty(t, Pipe{}.String())
+func TestSkip(t *testing.T) {
+	t.Run("skip", func(t *testing.T) {
+		require.True(t, Pipe{}.Skip(context.New(config.Project{})))
+	})
+
+	t.Run("dont skip", func(t *testing.T) {
+		ctx := context.New(config.Project{
+			Source: config.Source{
+				Enabled: true,
+			},
+		})
+		require.False(t, Pipe{}.Skip(ctx))
+	})
 }

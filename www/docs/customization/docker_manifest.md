@@ -1,12 +1,8 @@
----
-title: Docker Manifest
----
+# Docker Manifests
 
-Since [v0.148.0](https://github.com/goreleaser/goreleaser/releases/tag/v0.148.0),
-GoReleaser supports building and pushing Docker multi-platform images through
-the `docker manifest` tool.
+GoReleaser can also create and push Docker multi-platform images using the `docker manifest` tool.
 
-For it to work, it [has to be enabled in the client configurations](https://github.com/docker/cli/blob/master/experimental/README.md).
+For it to work, it needs to be enabled in the [client's configuration](https://github.com/docker/cli/blob/master/experimental/README.md).
 
 Please make sure `docker manifest` works before opening issues.
 
@@ -142,6 +138,9 @@ and push everything to Docker Hub.
 
 ## Podman
 
+!!! success "GoReleaser Pro"
+    The podman backend is a [GoReleaser Pro feature](/pro/).
+
 You can use [`podman`](https://podman.io) instead of `docker` by setting `use` to `podman` on your config:
 
 ```yaml
@@ -155,7 +154,3 @@ docker_manifests:
 ```
 
 Note that GoReleaser will not install Podman for you, nor change any of its configuration.
-Also worth noticing that currently Podman only works on Linux machines.
-
-!!! info
-    The Podman backend is a [GoReleaser Pro feature](/pro/).

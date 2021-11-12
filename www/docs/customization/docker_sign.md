@@ -1,12 +1,10 @@
----
-title: Docker Image Signing
----
+# Signing Docker Images and Manifests
 
 Signing Docker Images and Manifests is also possible with GoReleaser.
 This pipe was designed based on the common [sign](/customization/sign/) pipe having [cosign](https://github.com/sigstore/cosign) in mind.
 
 !!! info
-    Note that this pipe will run only at the end of the GoReleaser execution, as cosign will change the image in the registry.
+    Note that this pipe will run only at the end of the GoReleaser execution (in its publish phase), as cosign will change the image in the registry.
 
 
 To customize the signing pipeline you can use the following options:
@@ -22,11 +20,6 @@ docker_signs:
     id: foo
 
     # Name/template of the signature file.
-    #
-    # Available environment variables:
-    # - '${artifact}': the path to the artifact that will be signed
-    # - '${artifactID}': the ID of the artifact that will be signed
-    #
     # Note that with cosign you don't need to use this.
     #
     # Defaults to empty.
@@ -62,12 +55,37 @@ docker_signs:
 
     # Stdin data template to be given to the signature command as stdin.
     # Defaults to empty
-    stdin: '{{ .Env.GPG_PASSWORD }}'
+    stdin: '{{ .Env.COSIGN_PWD }}'
 
     # StdinFile file to be given to the signature command as stdin.
     # Defaults to empty
     stdin_file: ./.password
+
+    # Sets a certificate name that your signing command should write to.
+    # You can later use `${certificate}` or `.Env.certificate` in the `args` section.
+    # This is particularly useful for keyless signing (for instance, with cosign).
+    # Note that this should be a name, not a path.
+    #
+    # Defaults to empty.
+    certificate: '{{ trimsuffix .Env.artifactName ".tar.gz" }}.pem'
+
+    # List of environment variables that will be passed to the signing command as well as the templates.
+    #
+    # Defaults to empty
+    env:
+    - FOO=bar
+    - HONK=honkhonk
 ```
+
+### Available variable names
+
+These environment variables might be available in the fields that are templateable:
+
+- `${artifactName}`: the name of the artifact
+- `${artifact}`: the path to the artifact that will be signed
+- `${artifactID}`: the ID of the artifact that will be signed
+- `${certificate}`: the certificate filename, if provided
+- `${signature}`: the signature filename, if provided
 
 ## Common usage example
 

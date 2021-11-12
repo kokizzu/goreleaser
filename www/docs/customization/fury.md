@@ -1,8 +1,10 @@
----
-title: Fury.io
----
+# Fury.io (apt and rpm repositories)
 
-With [GoReleaser Pro](/pro) you can easily create deb and yum repositories on [fury.io][fury].
+!!! success "GoReleaser Pro"
+    The fury.io publisher is a [GoReleaser Pro feature](/pro/).
+    You might be able to reproduce some of its behavior on GoReleaser OSS using [custom publishers](/customization/publishers/).
+
+You can easily create `deb` and `yum` repositories on [fury.io][fury] using GoReleaser.
 
 ## Usage
 
@@ -48,8 +50,4 @@ furies:
       - deb
 ```
 
-!!! info
-    The fury publisher is a [GoReleaser Pro feature](/pro/).
-    You might be able to reproduce some of its behavior on GoReleaser OSS using [custom publishers](/customization/publishers/).
-
-[fury]: https://fury.io/
+[fury]: https://gemfury.com

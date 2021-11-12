@@ -252,10 +252,27 @@ func TestBuild(t *testing.T) {
 		// injecting some delay here to force inconsistent mod times on bins
 		time.Sleep(2 * time.Second)
 
+		parts := strings.Split(target, "_")
+		goos := parts[0]
+		goarch := parts[1]
+		goarm := ""
+		gomips := ""
+		if len(parts) > 2 {
+			if strings.Contains(goarch, "arm") {
+				goarm = parts[2]
+			}
+			if strings.Contains(goarch, "mips") {
+				gomips = parts[2]
+			}
+		}
 		err := Default.Build(ctx, build, api.Options{
 			Target: target,
 			Name:   bin + ext,
 			Path:   filepath.Join(folder, "dist", target, bin+ext),
+			Goos:   goos,
+			Goarch: goarch,
+			Goarm:  goarm,
+			Gomips: gomips,
 			Ext:    ext,
 		})
 		require.NoError(t, err)
@@ -268,9 +285,9 @@ func TestBuild(t *testing.T) {
 			Goarch: "amd64",
 			Type:   artifact.Binary,
 			Extra: map[string]interface{}{
-				"Ext":    "",
-				"Binary": "foo-v5.6.7",
-				"ID":     "foo",
+				artifact.ExtraExt:    "",
+				artifact.ExtraBinary: "foo-v5.6.7",
+				artifact.ExtraID:     "foo",
 			},
 		},
 		{
@@ -281,9 +298,9 @@ func TestBuild(t *testing.T) {
 			Gomips: "softfloat",
 			Type:   artifact.Binary,
 			Extra: map[string]interface{}{
-				"Ext":    "",
-				"Binary": "foo-v5.6.7",
-				"ID":     "foo",
+				artifact.ExtraExt:    "",
+				artifact.ExtraBinary: "foo-v5.6.7",
+				artifact.ExtraID:     "foo",
 			},
 		},
 		{
@@ -294,9 +311,9 @@ func TestBuild(t *testing.T) {
 			Gomips: "softfloat",
 			Type:   artifact.Binary,
 			Extra: map[string]interface{}{
-				"Ext":    "",
-				"Binary": "foo-v5.6.7",
-				"ID":     "foo",
+				artifact.ExtraExt:    "",
+				artifact.ExtraBinary: "foo-v5.6.7",
+				artifact.ExtraID:     "foo",
 			},
 		},
 		{
@@ -306,9 +323,9 @@ func TestBuild(t *testing.T) {
 			Goarch: "amd64",
 			Type:   artifact.Binary,
 			Extra: map[string]interface{}{
-				"Ext":    "",
-				"Binary": "foo-v5.6.7",
-				"ID":     "foo",
+				artifact.ExtraExt:    "",
+				artifact.ExtraBinary: "foo-v5.6.7",
+				artifact.ExtraID:     "foo",
 			},
 		},
 		{
@@ -319,9 +336,9 @@ func TestBuild(t *testing.T) {
 			Goarm:  "6",
 			Type:   artifact.Binary,
 			Extra: map[string]interface{}{
-				"Ext":    "",
-				"Binary": "foo-v5.6.7",
-				"ID":     "foo",
+				artifact.ExtraExt:    "",
+				artifact.ExtraBinary: "foo-v5.6.7",
+				artifact.ExtraID:     "foo",
 			},
 		},
 		{
@@ -331,9 +348,9 @@ func TestBuild(t *testing.T) {
 			Goarch: "amd64",
 			Type:   artifact.Binary,
 			Extra: map[string]interface{}{
-				"Ext":    ".exe",
-				"Binary": "foo-v5.6.7",
-				"ID":     "foo",
+				artifact.ExtraExt:    ".exe",
+				artifact.ExtraBinary: "foo-v5.6.7",
+				artifact.ExtraID:     "foo",
 			},
 		},
 		{
@@ -343,9 +360,9 @@ func TestBuild(t *testing.T) {
 			Goarch: "wasm",
 			Type:   artifact.Binary,
 			Extra: map[string]interface{}{
-				"Ext":    ".wasm",
-				"Binary": "foo-v5.6.7",
-				"ID":     "foo",
+				artifact.ExtraExt:    ".wasm",
+				artifact.ExtraBinary: "foo-v5.6.7",
+				artifact.ExtraID:     "foo",
 			},
 		},
 	})
@@ -451,31 +468,6 @@ func TestBuildFailed(t *testing.T) {
 	require.Empty(t, ctx.Artifacts.List())
 }
 
-func TestBuildInvalidTarget(t *testing.T) {
-	folder := testlib.Mktmp(t)
-	writeGoodMain(t, folder)
-	target := "linux"
-	config := config.Project{
-		Builds: []config.Build{
-			{
-				ID:      "foo",
-				Binary:  "foo",
-				Targets: []string{target},
-			},
-		},
-	}
-	ctx := context.New(config)
-	ctx.Git.CurrentTag = "5.6.7"
-	build := ctx.Config.Builds[0]
-	err := Default.Build(ctx, build, api.Options{
-		Target: target,
-		Name:   build.Binary,
-		Path:   filepath.Join(folder, "dist", target, build.Binary),
-	})
-	require.EqualError(t, err, "linux is not a valid build target")
-	require.Len(t, ctx.Artifacts.List(), 0)
-}
-
 func TestRunInvalidAsmflags(t *testing.T) {
 	folder := testlib.Mktmp(t)
 	writeGoodMain(t, folder)
@@ -573,7 +565,7 @@ func TestRunPipeWithoutMainFunc(t *testing.T) {
 			Builds: []config.Build{
 				{
 					Binary: "no-main",
-					Hooks:  config.HookConfig{},
+					Hooks:  config.BuildHookConfig{},
 					Targets: []string{
 						runtimeTarget,
 					},
@@ -688,7 +680,7 @@ func TestRunPipeWithMainFuncNotInMainGoFile(t *testing.T) {
 			{
 				Env:    []string{"GO111MODULE=off"},
 				Binary: "foo",
-				Hooks:  config.HookConfig{},
+				Hooks:  config.BuildHookConfig{},
 				Targets: []string{
 					runtimeTarget,
 				},
@@ -774,7 +766,7 @@ func TestProcessFlags(t *testing.T) {
 		Goarch: "amd64",
 		Goarm:  "7",
 		Extra: map[string]interface{}{
-			"Binary": "binary",
+			artifact.ExtraBinary: "binary",
 		},
 	}
 
